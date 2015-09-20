@@ -27,7 +27,8 @@ class LearningSwitch (api.Entity):
 
     You probablty want to do something in this method.
     """
-    pass
+    self.routingTable = {}
+
 
   def handle_port_down (self, port):
     """
@@ -35,7 +36,9 @@ class LearningSwitch (api.Entity):
 
     You probably want to remove table entries which are no longer valid here.
     """
-    pass
+    for i in self.routingTable:
+      if self.routingTable[i] == port:
+        self.routingTable.pop(i)
 
   def handle_rx (self, packet, in_port):
     """
@@ -55,5 +58,9 @@ class LearningSwitch (api.Entity):
       # Don't forward discovery messages
       return
 
-    # Flood out all ports except the input port
-    self.send(packet, in_port, flood=True)
+    if packet.src in self.routingTable:
+      self.send(packet, self.routingTable[packet.src])
+    else:
+      self.routingTable[packet.src] = in_port
+      # Flood out all ports except the input port
+      self.send(packet, in_port, flood=True)
