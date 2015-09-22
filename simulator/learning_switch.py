@@ -58,9 +58,11 @@ class LearningSwitch (api.Entity):
       # Don't forward discovery messages
       return
 
-    if packet.src in self.routingTable:
-      self.send(packet, self.routingTable[packet.src])
-    else:
+    if packet.src not in self.routingTable:
       self.routingTable[packet.src] = in_port
-      # Flood out all ports except the input port
+
+    if packet.dst not in self.routingTable:
       self.send(packet, in_port, flood=True)
+    else:
+      self.send(packet, self.routingTable[packet.dst])
+
