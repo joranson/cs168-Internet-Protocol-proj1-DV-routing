@@ -22,6 +22,9 @@ class DVRouter (basics.DVRouterBase):
     You probably want to do some additional initialization here.
     """
     self.start_timer() # Starts calling handle_timer() at correct rate
+    self.neighbors_distance = {self:0}
+    self.tables = {}                    # except its own dv (without prev field)
+    self.dv = {self: (0, self)}         # {Dst: (distance, prev)}
 
   def handle_link_up (self, port, latency):
     """
@@ -29,6 +32,8 @@ class DVRouter (basics.DVRouterBase):
 
     The port attached to the link and the link latency are passed in.
     """
+    self.send(api.RoutePacket(self, latency), port=port)
+
 
   def handle_link_down (self, port):
     """
@@ -36,6 +41,7 @@ class DVRouter (basics.DVRouterBase):
 
     The port number used by the link is passed in.
     """
+    self.send(api.RoutePacket(self, float("inf")), port=port)
 
   def handle_rx (self, packet, port):
     """
