@@ -22,9 +22,9 @@ class DVRouter (basics.DVRouterBase):
     You probably want to do some additional initialization here.
     """
     self.start_timer() # Starts calling handle_timer() at correct rate
-    self.neighbors_distance = {self:0}
-    self.tables = {}                    # except its own dv (without prev field)
-    self.dv = {self: (0, self)}         # {Dst: (distance, prev)}
+    self.neighbors_distance = {}    # the router itself and hosts are not considered neighbors
+    self.tables = {}                    # {port1:{dst1:x, dst2:y ...}, port2:{dst1:x, dst2:y ...} ...} hosts do not have entries
+    self.dv = {self: (0, self)}         # {Dst: (distance, next_hop)}
 
   def handle_link_up (self, port, latency):
     """
@@ -32,16 +32,28 @@ class DVRouter (basics.DVRouterBase):
 
     The port attached to the link and the link latency are passed in.
     """
-    self.send(api.RoutePacket(self, latency), port=port)
+    self.neighbors_distance[port] = latency
 
 
   def handle_link_down (self, port):
     """
-    Called by the framework when a link attached to this Entity does down.
+    Called by the framework when a link attached to this Entity goes down.
 
     The port number used by the link is passed in.
     """
-    self.send(api.RoutePacket(self, float("inf")), port=port)
+    self.neighbors_distance[port] = INFINITY
+    self.tables[port].pop()
+    for dst in self.dv:
+      if self.dv[dst][1] == port:
+        min_cost_to_dst = float("inf")
+        next_hop = None
+        for n in self.neighbors_distance:
+          entries = self.tables[n]
+          if dst in entries and min_cost_to_dst > entries[dst] + self.neighbors_distance[n]:
+            min_cost_to_dst = entries[dst] + self.neighbors_distance[n]
+            next_hop = self.neighbors_distance[n]
+        self.dv[dst] = (min_cost_to_dst, next_hop)
+
 
   def handle_rx (self, packet, port):
     """
@@ -54,13 +66,28 @@ class DVRouter (basics.DVRouterBase):
     """
     #self.log("RX %s on %s (%s)", packet, port, api.current_time())
     if isinstance(packet, basics.RoutePacket):
-      pass
+      # update table entries corresponding to the port
+      # change the table entry for port to destination with cost as latency
+      self.tables[port][packet.destination] = packet.latency
+      # check for updates in self.dv
+      min_cost_to_dst = self.dv[packet.destination][0]
+      if packet.latency + neighbors_distance[port] < min_cost_to_dst:
+        min_cost_to_dst = packet.latency + neighbors_distance[port]
+        self.dv[packet.destination]= (min_cost_to_dst, port)
+        # send RoutePacket packets to neighbors if self.dv updated
+        for p in neighbors_distance:
+          self.send(api.RoutePacket(destination, min_cost_to_dst), p)
+
     elif isinstance(packet, basics.HostDiscoveryPacket):
-      pass
+      latency = neighbors[port]
+      self.neighbors_distance.pop(port)
+      self.tables.pop(port)
+      self.dv[packet.src] = (latency, port)
+      for p in neighbors_distance:
+        self.send(api.RoutePacket(packet.src, latency), p)
+
     else:
-      # Totally wrong behavior for the sake of demonstration only: send
-      # the packet back to where it came from!
-      self.send(packet, port=port)
+      self.send(packet, self.dv[packet.dst][1])
 
   def handle_timer (self):
     """
