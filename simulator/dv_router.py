@@ -23,7 +23,7 @@ class DVRouter (basics.DVRouterBase):
     """
     self.start_timer()                  # Starts calling handle_timer() at correct rate
     self.neighbors_distance = {}        # the router itself and hosts are not considered neighbors
-    self.tables = {}                    # {port1:{dest1:x, dest2:y ...}, port2:{dest1:x, dest1:y ...} ...}
+    self.tables = {}                    # {port1:{dest1:(x, start_time_1), dest2:(y, start_time_2) ...}, port2:{dest1:(x, start_time_3), dest1:(y, start_time_4) ...} ...}
     self.dv = {}                        # {Dest: (distance, next_hop)}   next_hop is a port
 
   def handle_link_up (self, port, latency):
@@ -46,14 +46,17 @@ class DVRouter (basics.DVRouterBase):
     self.tables[port].pop()
     for dst in self.dv:
       if self.dv[dst][1] == port:
-        min_cost_to_dst = float("inf")
+        min_cost_to_dst = INFINITY
         next_hop = None
         for n in self.neighbors_distance:
           entries = self.tables[n]
-          if dst in entries and min_cost_to_dst > entries[dst] + self.neighbors_distance[n]:
+          if dst in entries and min_cost_to_dst > entries[dst][0] + self.neighbors_distance[n]:
             min_cost_to_dst = entries[dst] + self.neighbors_distance[n]
             next_hop = n
-        self.dv[dst] = (min_cost_to_dst, next_hop)
+        if min_cost_to_dst = INFINITY:
+          self.dv[dst].pop()
+        else:
+          self.dv[dst] = (min_cost_to_dst, next_hop)
 
 
   def handle_rx (self, packet, port):
@@ -69,7 +72,7 @@ class DVRouter (basics.DVRouterBase):
     if isinstance(packet, basics.RoutePacket):
       # update table entries corresponding to the port
       # change the table entry for port to destination with cost as latency
-      self.tables[port][packet.destination] = packet.latency
+      self.tables[port][packet.destination] = (packet.latency, api.current_time())
       # check for updates in self.dv
       # print packet.destination, self, packet.latency, self.dv, self.tables, self.neighbors_distance
 
@@ -81,7 +84,7 @@ class DVRouter (basics.DVRouterBase):
         min_cost_to_dst = self.dv[packet.destination][0]
         if packet.latency + self.neighbors_distance[port] < min_cost_to_dst:
           min_cost_to_dst = packet.latency + self.neighbors_distance[port]
-          self.dv[packet.destination]= (min_cost_to_dst, port)
+          self.dv[packet.destination] = (min_cost_to_dst, port)
           # send RoutePacket packets to neighbors if self.dv updated
           for p in self.neighbors_distance:
             self.send(basics.RoutePacket(packet.destination, min_cost_to_dst), p)
@@ -105,3 +108,28 @@ class DVRouter (basics.DVRouterBase):
     When called, your router should send tables to neighbors.  It also might
     not be a bad place to check for whether any entries have expired.
     """
+    # handle expired routes
+    for p in neighbors_distance:
+      for dest in p:
+        if api.current_time() - p[dest][1] > 15:
+          # an expired route
+          p[dest].pop()
+
+          if self.dv[dest][1] == p:
+            # recompute shortest path to dest
+            min_cost_to_dst = INFINITY
+            next_hop = None
+            for n in self.neighbors_distance:
+              entries = self.tables[n]
+              if dst in entries and min_cost_to_dst > entries[dst][0] + self.neighbors_distance[n]:
+                min_cost_to_dst = entries[dst] + self.neighbors_distance[n]
+                next_hop = n
+            if min_cost_to_dst == INFINITY:
+              self.dv[dst].pop()
+            else:
+              self.dv[dst] = (min_cost_to_dst, next_hop)
+
+    # send my tables
+    for n in neighbors_distance:
+      for dest in self.dv:
+        send(basics.RoutePacket(dest, self.dv[dest][0]), n)
