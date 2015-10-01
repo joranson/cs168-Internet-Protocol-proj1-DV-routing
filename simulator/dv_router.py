@@ -21,10 +21,10 @@ class DVRouter (basics.DVRouterBase):
 
     You probably want to do some additional initialization here.
     """
-    self.start_timer() # Starts calling handle_timer() at correct rate
-    self.neighbors_distance = {}    # the router itself and hosts are not considered neighbors
-    self.tables = {}                    # {port1:{dst1:x, dst2:y ...}, port2:{dst1:x, dst2:y ...} ...} hosts do not have entries
-    self.dv = {self: (0, self)}         # {Dst: (distance, next_hop)}
+    self.start_timer()                  # Starts calling handle_timer() at correct rate
+    self.neighbors_distance = {}        # the router itself and hosts are not considered neighbors
+    self.tables = {}                    # {port1:{dest1:x, dest2:y ...}, port2:{dest1:x, dest1:y ...} ...}
+    self.dv = {}                        # {Dest: (distance, next_hop)}   next_hop is a port
 
   def handle_link_up (self, port, latency):
     """
@@ -41,7 +41,7 @@ class DVRouter (basics.DVRouterBase):
 
     The port number used by the link is passed in.
     """
-    self.neighbors_distance[port] = INFINITY
+    self.neighbors_distance[port] = INFINITY    #TO-DO: WTF??
     self.tables[port].pop()
     for dst in self.dv:
       if self.dv[dst][1] == port:
@@ -51,7 +51,7 @@ class DVRouter (basics.DVRouterBase):
           entries = self.tables[n]
           if dst in entries and min_cost_to_dst > entries[dst] + self.neighbors_distance[n]:
             min_cost_to_dst = entries[dst] + self.neighbors_distance[n]
-            next_hop = self.neighbors_distance[n]
+            next_hop = n
         self.dv[dst] = (min_cost_to_dst, next_hop)
 
 
@@ -76,7 +76,7 @@ class DVRouter (basics.DVRouterBase):
         self.dv[packet.destination]= (min_cost_to_dst, port)
         # send RoutePacket packets to neighbors if self.dv updated
         for p in self.neighbors_distance:
-          self.send(api.RoutePacket(packet.destination, min_cost_to_dst), p)
+          self.send(basics.RoutePacket(packet.destination, min_cost_to_dst), p)
 
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
@@ -84,10 +84,11 @@ class DVRouter (basics.DVRouterBase):
       self.tables.pop(port)
       self.dv[packet.src] = (latency, port)
       for p in self.neighbors_distance:
-        self.send(api.RoutePacket(packet.src, latency), p)
+        self.send(basics.RoutePacket(packet.src, latency), p)
 
     else:
-      self.send(packet, self.dv[packet.dst][1])
+      if packet.dst in self.dv:
+        self.send(packet, self.dv[packet.dst][1])
 
   def handle_timer (self):
     """

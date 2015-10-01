@@ -30,7 +30,7 @@ class LearningSwitch (api.Entity):
     self.routingTable = {}
 
 
-  def handle_port_down (self, port):
+  def handle_link_down (self, port):
     """
     Called when a port goes down (because a link is removed)
 
