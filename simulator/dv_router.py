@@ -33,6 +33,7 @@ class DVRouter (basics.DVRouterBase):
     The port attached to the link and the link latency are passed in.
     """
     self.neighbors_distance[port] = latency
+    self.tables[port] = {}
 
 
   def handle_link_down (self, port):
@@ -70,13 +71,20 @@ class DVRouter (basics.DVRouterBase):
       # change the table entry for port to destination with cost as latency
       self.tables[port][packet.destination] = packet.latency
       # check for updates in self.dv
-      min_cost_to_dst = self.dv[packet.destination][0]
-      if packet.latency + self.neighbors_distance[port] < min_cost_to_dst:
-        min_cost_to_dst = packet.latency + self.neighbors_distance[port]
-        self.dv[packet.destination]= (min_cost_to_dst, port)
-        # send RoutePacket packets to neighbors if self.dv updated
+      # print packet.destination, self, packet.latency, self.dv, self.tables, self.neighbors_distance
+
+      if packet.destination not in self.dv:
+        self.dv[packet.destination] = (packet.latency, port)
         for p in self.neighbors_distance:
-          self.send(basics.RoutePacket(packet.destination, min_cost_to_dst), p)
+            self.send(basics.RoutePacket(packet.destination, packet.latency + self.neighbors_distance[port]), p)
+      else:
+        min_cost_to_dst = self.dv[packet.destination][0]
+        if packet.latency + self.neighbors_distance[port] < min_cost_to_dst:
+          min_cost_to_dst = packet.latency + self.neighbors_distance[port]
+          self.dv[packet.destination]= (min_cost_to_dst, port)
+          # send RoutePacket packets to neighbors if self.dv updated
+          for p in self.neighbors_distance:
+            self.send(basics.RoutePacket(packet.destination, min_cost_to_dst), p)
 
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
