@@ -53,7 +53,7 @@ class DVRouter (basics.DVRouterBase):
           if dst in entries and min_cost_to_dst > entries[dst][0] + self.neighbors_distance[n]:
             min_cost_to_dst = entries[dst] + self.neighbors_distance[n]
             next_hop = n
-        if min_cost_to_dst = INFINITY:
+        if min_cost_to_dst == INFINITY:
           self.dv[dst].pop()
         else:
           self.dv[dst] = (min_cost_to_dst, next_hop)
@@ -109,11 +109,11 @@ class DVRouter (basics.DVRouterBase):
     not be a bad place to check for whether any entries have expired.
     """
     # handle expired routes
-    for p in neighbors_distance:
-      for dest in p:
-        if api.current_time() - p[dest][1] > 15:
+    for p in self.neighbors_distance:
+      for dest in self.tables[p]:
+        if api.current_time() - self.tables[p][dest][1] > 15:
           # an expired route
-          p[dest].pop()
+          self.tables[p][dest].pop()
 
           if self.dv[dest][1] == p:
             # recompute shortest path to dest
@@ -121,15 +121,15 @@ class DVRouter (basics.DVRouterBase):
             next_hop = None
             for n in self.neighbors_distance:
               entries = self.tables[n]
-              if dst in entries and min_cost_to_dst > entries[dst][0] + self.neighbors_distance[n]:
-                min_cost_to_dst = entries[dst] + self.neighbors_distance[n]
+              if dest in entries and min_cost_to_dst > entries[dest][0] + self.neighbors_distance[n]:
+                min_cost_to_dst = entries[dest] + self.neighbors_distance[n]
                 next_hop = n
             if min_cost_to_dst == INFINITY:
-              self.dv[dst].pop()
+              self.dv[dest].pop()
             else:
-              self.dv[dst] = (min_cost_to_dst, next_hop)
+              self.dv[dest] = (min_cost_to_dst, next_hop)
 
     # send my tables
-    for n in neighbors_distance:
+    for n in self.neighbors_distance:
       for dest in self.dv:
-        send(basics.RoutePacket(dest, self.dv[dest][0]), n)
+        self.send(basics.RoutePacket(dest, self.dv[dest][0]), n)
