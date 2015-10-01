@@ -2,3 +2,5 @@
 /doc
 /.idea
 *.xml
+simulator/.ok_messages
+simulator/.ok_refresh
