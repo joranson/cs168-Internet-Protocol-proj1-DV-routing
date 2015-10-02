@@ -12,7 +12,7 @@ INFINITY = 16
 
 class DVRouter (basics.DVRouterBase):
   #NO_LOG = True # Set to True on an instance to disable its logging
-  #POISON_MODE = True # Can override POISON_MODE here
+  POISON_MODE = True # Can override POISON_MODE here
   #DEFAULT_TIMER_INTERVAL = 5 # Can override this yourself for testing
 
   def __init__ (self):
@@ -22,9 +22,9 @@ class DVRouter (basics.DVRouterBase):
     You probably want to do some additional initialization here.
     """
     self.start_timer()                  # Starts calling handle_timer() at correct rate
-    self.neighbors_distance = {}        # the router itself and hosts are not considered neighbors
-    self.tables = {}                    # {port1:{dest1:(x, start_time_1), dest2:(y, start_time_2) ...}, port2:{dest1:(x, start_time_3), dest1:(y, start_time_4) ...} ...}
-    self.dv = {}                        # {Dest: (distance, next_hop)}   next_hop is a port
+    self.tables = {}                    # {port1:{dest1:(x, start_time_1), dest2:(y, start_time_2) ...}, port2:{dest1:(x, start_time_3), dest1:(y, start_time_4) ...} ...}  dest is a host
+    self.neighbors_distance = {}        # {port: latency}  the router itself and hosts are not considered neighbors; separating itself from self.dv for a better abstraction
+    self.dv = {}                        # {dest: (distance, next_hop)}   dest is a host, next_hop is a port
 
   def handle_link_up (self, port, latency):
     """
@@ -42,21 +42,26 @@ class DVRouter (basics.DVRouterBase):
 
     The port number used by the link is passed in.
     """
-    self.neighbors_distance[port] = INFINITY    #TO-DO: WTF??
-    self.tables[port].pop()
-    for dst in self.dv:
-      if self.dv[dst][1] == port:
-        min_cost_to_dst = INFINITY
+    # self.neighbors_distance[port] = INFINITY    #TO-DO: WTF??
+    self.neighbors_distance.pop(port)
+    self.tables.pop(port)
+    for dest in self.dv:
+      if self.dv[dest][1] == port:
+        min_cost_to_dest = INFINITY
         next_hop = None
-        for n in self.neighbors_distance:
-          entries = self.tables[n]
-          if dst in entries and min_cost_to_dst > entries[dst][0] + self.neighbors_distance[n]:
-            min_cost_to_dst = entries[dst] + self.neighbors_distance[n]
-            next_hop = n
-        if min_cost_to_dst == INFINITY:
-          self.dv[dst].pop()
+        for pp in self.neighbors_distance:
+          entries = self.tables[pp]
+          if dest in entries and min_cost_to_dest > entries[dest][0] + self.neighbors_distance[pp]:
+            min_cost_to_dest = entries[dest][0] + self.neighbors_distance[pp]
+            next_hop = pp
+        if min_cost_to_dest == INFINITY:
+          self.dv.pop(dest)
         else:
-          self.dv[dst] = (min_cost_to_dst, next_hop)
+          self.dv[dest] = (min_cost_to_dest, next_hop)
+          # print self, self.dv
+        # event-based trigger; sending updated dv part
+        for pp in self.neighbors_distance:
+          self.send(basics.RoutePacket(dest, min_cost_to_dest), pp)
 
 
   def handle_rx (self, packet, port):
@@ -72,33 +77,36 @@ class DVRouter (basics.DVRouterBase):
     if isinstance(packet, basics.RoutePacket):
       # update table entries corresponding to the port
       # change the table entry for port to destination with cost as latency
-      self.tables[port][packet.destination] = (packet.latency, api.current_time())
+      self.tables[port][packet.destination] = (packet.latency + self.neighbors_distance[port], api.current_time())
       # check for updates in self.dv
-      # print packet.destination, self, packet.latency, self.dv, self.tables, self.neighbors_distance
-
       if packet.destination not in self.dv:
-        self.dv[packet.destination] = (packet.latency, port)
+        # print packet.destination, "  not in ", self, " packet sent from ", packet.src, "current dv: ", self.dv, "current tables: ", self.tables
+        self.dv[packet.destination] = (packet.latency + self.neighbors_distance[port], port)
         for p in self.neighbors_distance:
             self.send(basics.RoutePacket(packet.destination, packet.latency + self.neighbors_distance[port]), p)
+        # print "             now in: ", self.dv
       else:
-        min_cost_to_dst = self.dv[packet.destination][0]
-        if packet.latency + self.neighbors_distance[port] < min_cost_to_dst:
-          min_cost_to_dst = packet.latency + self.neighbors_distance[port]
-          self.dv[packet.destination] = (min_cost_to_dst, port)
+        min_cost_to_dest = self.dv[packet.destination][0]
+        if packet.latency + self.neighbors_distance[port] < min_cost_to_dest:
+          min_cost_to_dest = packet.latency + self.neighbors_distance[port]
+          self.dv[packet.destination] = (min_cost_to_dest, port)
           # send RoutePacket packets to neighbors if self.dv updated
+          # print "inside handle_rx for ", self
           for p in self.neighbors_distance:
-            self.send(basics.RoutePacket(packet.destination, min_cost_to_dst), p)
+            self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
+            # print packet.destination, min_cost_to_dest
 
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
-      self.neighbors_distance.pop(port)
-      self.tables.pop(port)
+      self.neighbors_distance.pop(port)   # this port directs to a host, no need to store in neighboring routers table
+      self.tables[port] = {packet.src: (latency, api.current_time())}               # this port directs to a host, no info would be retrieved since we store latency in dv only
       self.dv[packet.src] = (latency, port)
       for p in self.neighbors_distance:
         self.send(basics.RoutePacket(packet.src, latency), p)
 
     else:
       if packet.dst in self.dv:
+
         self.send(packet, self.dv[packet.dst][1])
 
   def handle_timer (self):
@@ -117,19 +125,19 @@ class DVRouter (basics.DVRouterBase):
 
           if self.dv[dest][1] == p:
             # recompute shortest path to dest
-            min_cost_to_dst = INFINITY
+            min_cost_to_dest = float("inf")
             next_hop = None
-            for n in self.neighbors_distance:
-              entries = self.tables[n]
-              if dest in entries and min_cost_to_dst > entries[dest][0] + self.neighbors_distance[n]:
-                min_cost_to_dst = entries[dest] + self.neighbors_distance[n]
-                next_hop = n
-            if min_cost_to_dst == INFINITY:
-              self.dv[dest].pop()
+            for pp in self.neighbors_distance:
+              entries = self.tables[pp]
+              if dest in entries and min_cost_to_dest > entries[dest][0] + self.neighbors_distance[pp]:
+                min_cost_to_dest = entries[dest] + self.neighbors_distance[pp]
+                next_hop = pp
+            if min_cost_to_dest == float("inf"):
+              self.dv.pop(dest)
             else:
-              self.dv[dest] = (min_cost_to_dst, next_hop)
+              self.dv[dest] = (min_cost_to_dest, next_hop)
 
     # send my tables
-    for n in self.neighbors_distance:
+    for pp in self.neighbors_distance:
       for dest in self.dv:
-        self.send(basics.RoutePacket(dest, self.dv[dest][0]), n)
+        self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
