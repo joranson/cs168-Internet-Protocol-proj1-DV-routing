@@ -86,12 +86,13 @@ class DVRouter (basics.DVRouterBase):
             self.send(basics.RoutePacket(packet.destination, packet.latency + self.neighbors_distance[port]), p)
         # print "             now in: ", self.dv
       else:
-        min_cost_to_dest = self.dv[packet.destination][0]
+        min_cost_to_dest = self.dv[packet.destination][0] if self.dv[packet.destination][1]!=port else self.neighbors_distance[port] + packet.latency
         if packet.latency + self.neighbors_distance[port] < min_cost_to_dest:
           min_cost_to_dest = packet.latency + self.neighbors_distance[port]
+
+        # send RoutePacket packets to neighbors if self.dv updated
+        if min_cost_to_dest != self.dv[packet.destination][0]:
           self.dv[packet.destination] = (min_cost_to_dest, port)
-          # send RoutePacket packets to neighbors if self.dv updated
-          # print "inside handle_rx for ", self
           for p in self.neighbors_distance:
             self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
             # print packet.destination, min_cost_to_dest
@@ -99,7 +100,7 @@ class DVRouter (basics.DVRouterBase):
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
       self.neighbors_distance.pop(port)   # this port directs to a host, no need to store in neighboring routers table
-      self.tables[port] = {packet.src: (latency, api.current_time())}               # this port directs to a host, no info would be retrieved since we store latency in dv only
+      self.tables[port] = {packet.src: (latency, api.current_time())}
       self.dv[packet.src] = (latency, port)
       for p in self.neighbors_distance:
         self.send(basics.RoutePacket(packet.src, latency), p)

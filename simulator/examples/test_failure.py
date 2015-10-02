@@ -50,16 +50,28 @@ def launch ():
     api.userlog.debug("Sending test ping 1")
     h1.ping(h2)
 
+    # for i in [s1,s2,s3,s4,s5]:
+    #   print i
+    #   print "    dv:     ", i.dv
+    #   print "    tables: ", i.tables
+    #   print "    neighb: ", i.neighbors_distance
+
     yield 10
 
     api.userlog.debug("Failing s1-s2 link")
     s1.unlinkTo(s2)
 
     yield 10
+    #
+    # for i in [s1,s2,s3,s4,s5]:
+    #   print i
+    #   print "    dv:     ", i.dv
+    #   print "    tables: ", i.tables
+    #   print "    neighb: ", i.neighbors_distance
 
     api.userlog.debug("Sending test ping 2")
     h1.ping(h2)
-
+    api.userlog.debug(s3.dv)
     yield 10
 
     if h2.pings != 2:
