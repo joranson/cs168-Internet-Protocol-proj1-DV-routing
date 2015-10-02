@@ -58,7 +58,6 @@ class DVRouter (basics.DVRouterBase):
           self.dv.pop(dest)
         else:
           self.dv[dest] = (min_cost_to_dest, next_hop)
-          # print self, self.dv
         # event-based trigger; sending updated dv part
         for pp in self.neighbors_distance:
           self.send(basics.RoutePacket(dest, min_cost_to_dest), pp)
@@ -80,11 +79,9 @@ class DVRouter (basics.DVRouterBase):
       self.tables[port][packet.destination] = (packet.latency + self.neighbors_distance[port], api.current_time())
       # check for updates in self.dv
       if packet.destination not in self.dv:
-        # print packet.destination, "  not in ", self, " packet sent from ", packet.src, "current dv: ", self.dv, "current tables: ", self.tables
         self.dv[packet.destination] = (packet.latency + self.neighbors_distance[port], port)
         for p in self.neighbors_distance:
             self.send(basics.RoutePacket(packet.destination, packet.latency + self.neighbors_distance[port]), p)
-        # print "             now in: ", self.dv
       else:
         min_cost_to_dest = self.dv[packet.destination][0] if self.dv[packet.destination][1]!=port else self.neighbors_distance[port] + packet.latency
         if packet.latency + self.neighbors_distance[port] < min_cost_to_dest:
@@ -95,7 +92,6 @@ class DVRouter (basics.DVRouterBase):
           self.dv[packet.destination] = (min_cost_to_dest, port)
           for p in self.neighbors_distance:
             self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
-            # print packet.destination, min_cost_to_dest
 
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
@@ -126,14 +122,14 @@ class DVRouter (basics.DVRouterBase):
 
           if self.dv[dest][1] == p:
             # recompute shortest path to dest
-            min_cost_to_dest = float("inf")
+            min_cost_to_dest = INFINITY
             next_hop = None
             for pp in self.neighbors_distance:
               entries = self.tables[pp]
               if dest in entries and min_cost_to_dest > entries[dest][0] + self.neighbors_distance[pp]:
                 min_cost_to_dest = entries[dest] + self.neighbors_distance[pp]
                 next_hop = pp
-            if min_cost_to_dest == float("inf"):
+            if min_cost_to_dest == INFINITY:
               self.dv.pop(dest)
             else:
               self.dv[dest] = (min_cost_to_dest, next_hop)
