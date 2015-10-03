@@ -152,6 +152,7 @@ class DVRouter (basics.DVRouterBase):
         if api.current_time() - self.tables[p][dest][1] > 15:
           # an expired route
           self.tables[p][dest] = INFINITY
+          self.neighbors_distance[p] = INFINITY
 
           if self.dv[dest][1] == p:
             # recompute shortest path to dest
