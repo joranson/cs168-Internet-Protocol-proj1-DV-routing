@@ -36,7 +36,7 @@ class DVRouter (basics.DVRouterBase):
     self.tables[port] = {}
     # send the dictance vector to the new neighbor
     for dest in self.dv:
-      send(basics.RoutePacket(dest, self.dv[dest][0]), port)
+      self.send(basics.RoutePacket(dest, self.dv[dest][0]), port)
 
 
   def handle_link_down (self, port):
@@ -52,22 +52,29 @@ class DVRouter (basics.DVRouterBase):
       if self.dv[dest][1] == port:
         min_cost_to_dest = INFINITY
         next_hop = None
+        reallyInfCount = False
         for pp in self.neighbors_distance:
           entries = self.tables[pp]
-          if dest in entries and min_cost_to_dest > entries[dest][0] + self.neighbors_distance[pp]:
+          if dest in entries and min_cost_to_dest >= entries[dest][0] + self.neighbors_distance[pp]:
             min_cost_to_dest = entries[dest][0] + self.neighbors_distance[pp]
+            if min_cost_to_dest==INFINITY:
+              reallyInfCount = True
             next_hop = pp
-        if min_cost_to_dest == INFINITY:
-          self.dv.pop(dest)
-        else:
-          self.dv[dest] = (min_cost_to_dest, next_hop)
+        self.dv[dest] = (min_cost_to_dest, next_hop)
         # event-based trigger; sending updated dv part
         for pp in self.neighbors_distance:
           if pp == next_hop:
-            if POISON_MODE:
+            if self.POISON_MODE:
               self.send(basics.RoutePacket(dest, INFINITY), pp)
           else:
-            self.send(basics.RoutePacket(dest, min_cost_to_dest), pp)
+            if min_cost_to_dest==INFINITY:
+              if reallyInfCount:
+                self.send(basics.RoutePacket(dest, min_cost_to_dest), pp)
+              else:
+                if self.POISON_MODE:
+                  self.send(basics.RoutePacket(dest, INFINITY), pp)
+            else:
+              self.send(basics.RoutePacket(dest, min_cost_to_dest), pp)
 
 
   def handle_rx (self, packet, port):
@@ -89,24 +96,33 @@ class DVRouter (basics.DVRouterBase):
         self.dv[packet.destination] = (packet.latency + self.neighbors_distance[port], port)
         for p in self.neighbors_distance:
           if p == port:
-            if POISON_MODE:
+            if self.POISON_MODE:
               self.send(basics.RoutePacket(packet.destination, INFINITY), p)
           else:
             self.send(basics.RoutePacket(packet.destination, packet.latency + self.neighbors_distance[port]), p)
       else:
         min_cost_to_dest = self.dv[packet.destination][0] if self.dv[packet.destination][1]!=port else self.neighbors_distance[port] + packet.latency
-        if packet.latency + self.neighbors_distance[port] < min_cost_to_dest:
+        reallyInfCount = False
+        if packet.latency + self.neighbors_distance[port] <= min_cost_to_dest:
           min_cost_to_dest = packet.latency + self.neighbors_distance[port]
-
+          if min_cost_to_dest==INFINITY:
+            reallyInfCount = True
         # send RoutePacket packets to neighbors if self.dv updated
         if min_cost_to_dest != self.dv[packet.destination][0]:
           self.dv[packet.destination] = (min_cost_to_dest, port)
           for p in self.neighbors_distance:
             if p == port:
-              if POISON_MODE:
+              if self.POISON_MODE:
                 self.send(basics.RoutePacket(packet.destination, INFINITY), p)
             else:
-              self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
+              if min_cost_to_dest==INFINITY:
+                if reallyInfCount:
+                  self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
+                else:
+                  if self.POISON_MODE:
+                    self.send(basics.RoutePacket(packet.destination, INFINITY), p)
+              else:
+                self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
 
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
@@ -135,7 +151,7 @@ class DVRouter (basics.DVRouterBase):
       for dest in self.tables[p]:
         if api.current_time() - self.tables[p][dest][1] > 15:
           # an expired route
-          self.tables[p][dest].pop()
+          self.tables[p][dest] = INFINITY
 
           if self.dv[dest][1] == p:
             # recompute shortest path to dest
@@ -143,19 +159,16 @@ class DVRouter (basics.DVRouterBase):
             next_hop = None
             for pp in self.neighbors_distance:
               entries = self.tables[pp]
-              if dest in entries and min_cost_to_dest > entries[dest][0] + self.neighbors_distance[pp]:
+              if dest in entries and min_cost_to_dest >= entries[dest][0] + self.neighbors_distance[pp]:
                 min_cost_to_dest = entries[dest] + self.neighbors_distance[pp]
                 next_hop = pp
-            if min_cost_to_dest == INFINITY:
-              self.dv.pop(dest)
-            else:
-              self.dv[dest] = (min_cost_to_dest, next_hop)
+            self.dv[dest] = (min_cost_to_dest, next_hop)
 
     # send my tables
     for pp in self.neighbors_distance:
       for dest in self.dv:
         if pp == self.dv[dest][1]:
-          if POISON_MODE:
-            self.send(basics.RoutePacket(packet.destination, INFINITY), pp)
+          if self.POISON_MODE:
+            self.send(basics.RoutePacket(dest, INFINITY), pp)
         else:
           self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
