@@ -13,7 +13,7 @@ INFINITY = 16
 class DVRouter (basics.DVRouterBase):
   #NO_LOG = True # Set to True on an instance to disable its logging
   POISON_MODE = True # Can override POISON_MODE here
-  #DEFAULT_TIMER_INTERVAL = 5 # Can override this yourself for testing
+  # DEFAULT_TIMER_INTERVAL = 5 # Can override this yourself for testing
 
   def __init__ (self):
     """
@@ -22,7 +22,7 @@ class DVRouter (basics.DVRouterBase):
     You probably want to do some additional initialization here.
     """
     self.start_timer()                  # Starts calling handle_timer() at correct rate
-    self.tables = {}                    # {port1:{dest1:(x, start_time_1), dest2:(y, start_time_2) ...}, port2:{dest1:(x, start_time_3), dest1:(y, start_time_4) ...} ...}  dest is a host
+    self.tables = {}                    # {port1:{dest1:(cost1, start_time_1), dest2:(cost2, start_time_2) ...}, port2:{dest1:(cost3, start_time_3), dest1:(cost4, start_time_4) ...} ...}  dest is a host
     self.neighbors_distance = {}        # {port: latency}  the router itself and hosts are not considered neighbors; separating itself from self.dv for a better abstraction
     self.dv = {}                        # {dest: (distance, next_hop)}   dest is a host, next_hop is a port
 
@@ -127,7 +127,7 @@ class DVRouter (basics.DVRouterBase):
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
       self.neighbors_distance.pop(port)   # this port directs to a host, no need to store in neighboring routers table
-      self.tables[port] = {packet.src: (latency, api.current_time())}
+      self.tables.pop(port)
       self.dv[packet.src] = (latency, port)
       for p in self.neighbors_distance:
         self.send(basics.RoutePacket(packet.src, latency), p)
@@ -147,12 +147,14 @@ class DVRouter (basics.DVRouterBase):
     not be a bad place to check for whether any entries have expired.
     """
     # handle expired routes
+    # print "NOW CALLING HANDLE_TIMER in ", self
     for p in self.neighbors_distance:
+      expired_table_enties = []
       for dest in self.tables[p]:
         if api.current_time() - self.tables[p][dest][1] > 15:
           # an expired route
-          self.tables[p][dest] = INFINITY
-          self.neighbors_distance[p] = INFINITY
+          self.tables[p][dest] = (INFINITY, api.current_time())
+          expired_table_enties.append(dest)
 
           if self.dv[dest][1] == p:
             # recompute shortest path to dest
@@ -161,9 +163,13 @@ class DVRouter (basics.DVRouterBase):
             for pp in self.neighbors_distance:
               entries = self.tables[pp]
               if dest in entries and min_cost_to_dest >= entries[dest][0] + self.neighbors_distance[pp]:
-                min_cost_to_dest = entries[dest] + self.neighbors_distance[pp]
+                # print dest, entries, self.neighbors_distance[pp]
+                min_cost_to_dest = entries[dest][0] + self.neighbors_distance[pp]
                 next_hop = pp
             self.dv[dest] = (min_cost_to_dest, next_hop)
+      for dest in expired_table_enties:
+        self.tables[p].pop(dest)
+    # print "finished Handle_timer. Table is ", self.tables
 
     # send my tables
     for pp in self.neighbors_distance:
@@ -172,4 +178,5 @@ class DVRouter (basics.DVRouterBase):
           if self.POISON_MODE:
             self.send(basics.RoutePacket(dest, INFINITY), pp)
         else:
-          self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
+          if self.dv[dest][0] < INFINITY or self.POISON_MODE:
+              self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
