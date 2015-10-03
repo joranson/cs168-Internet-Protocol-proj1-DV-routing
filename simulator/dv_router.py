@@ -13,7 +13,7 @@ INFINITY = 16
 class DVRouter (basics.DVRouterBase):
   #NO_LOG = True # Set to True on an instance to disable its logging
   POISON_MODE = True # Can override POISON_MODE here
-  #DEFAULT_TIMER_INTERVAL = 5 # Can override this yourself for testing
+  # DEFAULT_TIMER_INTERVAL = 5 # Can override this yourself for testing
 
   def __init__ (self):
     """
@@ -147,9 +147,10 @@ class DVRouter (basics.DVRouterBase):
     not be a bad place to check for whether any entries have expired.
     """
     # handle expired routes
+    # print "NOW CALLING HANDLE_TIMER in ", self
     for p in self.neighbors_distance:
+      expired_table_enties = []
       for dest in self.tables[p]:
-        expired_table_enties = []
         if api.current_time() - self.tables[p][dest][1] > 15:
           # an expired route
           self.tables[p][dest] = (INFINITY, api.current_time())
@@ -162,11 +163,13 @@ class DVRouter (basics.DVRouterBase):
             for pp in self.neighbors_distance:
               entries = self.tables[pp]
               if dest in entries and min_cost_to_dest >= entries[dest][0] + self.neighbors_distance[pp]:
-                min_cost_to_dest = entries[dest] + self.neighbors_distance[pp]
+                # print dest, entries, self.neighbors_distance[pp]
+                min_cost_to_dest = entries[dest][0] + self.neighbors_distance[pp]
                 next_hop = pp
             self.dv[dest] = (min_cost_to_dest, next_hop)
       for dest in expired_table_enties:
         self.tables[p].pop(dest)
+    # print "finished Handle_timer. Table is ", self.tables
 
     # send my tables
     for pp in self.neighbors_distance:
@@ -175,4 +178,5 @@ class DVRouter (basics.DVRouterBase):
           if self.POISON_MODE:
             self.send(basics.RoutePacket(dest, INFINITY), pp)
         else:
-          self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
+          if self.dv[dest][0] < INFINITY or self.POISON_MODE:
+              self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
