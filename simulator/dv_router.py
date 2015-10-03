@@ -34,6 +34,9 @@ class DVRouter (basics.DVRouterBase):
     """
     self.neighbors_distance[port] = latency
     self.tables[port] = {}
+    # send the dictance vector to the new neighbor
+    for dest in self.dv:
+      send(basics.RoutePacket(dest, self.dv[dest][0]), port)
 
 
   def handle_link_down (self, port):
@@ -60,7 +63,11 @@ class DVRouter (basics.DVRouterBase):
           self.dv[dest] = (min_cost_to_dest, next_hop)
         # event-based trigger; sending updated dv part
         for pp in self.neighbors_distance:
-          self.send(basics.RoutePacket(dest, min_cost_to_dest), pp)
+          if pp == next_hop:
+            if POISON_MODE:
+              self.send(basics.RoutePacket(dest, INFINITY), pp)
+          else:
+            self.send(basics.RoutePacket(dest, min_cost_to_dest), pp)
 
 
   def handle_rx (self, packet, port):
@@ -81,6 +88,10 @@ class DVRouter (basics.DVRouterBase):
       if packet.destination not in self.dv:
         self.dv[packet.destination] = (packet.latency + self.neighbors_distance[port], port)
         for p in self.neighbors_distance:
+          if p == port:
+            if POISON_MODE:
+              self.send(basics.RoutePacket(packet.destination, INFINITY), p)
+          else:
             self.send(basics.RoutePacket(packet.destination, packet.latency + self.neighbors_distance[port]), p)
       else:
         min_cost_to_dest = self.dv[packet.destination][0] if self.dv[packet.destination][1]!=port else self.neighbors_distance[port] + packet.latency
@@ -91,7 +102,11 @@ class DVRouter (basics.DVRouterBase):
         if min_cost_to_dest != self.dv[packet.destination][0]:
           self.dv[packet.destination] = (min_cost_to_dest, port)
           for p in self.neighbors_distance:
-            self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
+            if p == port:
+              if POISON_MODE:
+                self.send(basics.RoutePacket(packet.destination, INFINITY), p)
+            else:
+              self.send(basics.RoutePacket(packet.destination, min_cost_to_dest), p)
 
     elif isinstance(packet, basics.HostDiscoveryPacket):
       latency = self.neighbors_distance[port]
@@ -103,8 +118,10 @@ class DVRouter (basics.DVRouterBase):
 
     else:
       if packet.dst in self.dv:
+        # do not forward a packet back to the port it arrived on
+        if port != self.dv[packet.dst][1]:
+          self.send(packet, self.dv[packet.dst][1])
 
-        self.send(packet, self.dv[packet.dst][1])
 
   def handle_timer (self):
     """
@@ -137,4 +154,8 @@ class DVRouter (basics.DVRouterBase):
     # send my tables
     for pp in self.neighbors_distance:
       for dest in self.dv:
-        self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
+        if pp == self.dv[dest][1]:
+          if POISON_MODE:
+            self.send(basics.RoutePacket(packet.destination, INFINITY), pp)
+        else:
+          self.send(basics.RoutePacket(dest, self.dv[dest][0]), pp)
