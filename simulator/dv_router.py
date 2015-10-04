@@ -13,7 +13,7 @@ INFINITY = 16
 class DVRouter (basics.DVRouterBase):
   #NO_LOG = True # Set to True on an instance to disable its logging
   POISON_MODE = True # Can override POISON_MODE here
-  # DEFAULT_TIMER_INTERVAL = 5 # Can override this yourself for testing
+  DEFAULT_TIMER_INTERVAL = 8 # Can override this yourself for testing
 
   def __init__ (self):
     """
@@ -147,29 +147,39 @@ class DVRouter (basics.DVRouterBase):
     not be a bad place to check for whether any entries have expired.
     """
     # handle expired routes
-    # print "NOW CALLING HANDLE_TIMER in ", self
     for p in self.neighbors_distance:
-      expired_table_enties = []
+      expired_table_entries = []
+      unreachable_destinations = []
       for dest in self.tables[p]:
-        if api.current_time() - self.tables[p][dest][1] > 15:
-          # an expired route
+        if api.current_time() - self.tables[p][dest][1] > 2:
+          # an expired routes
           self.tables[p][dest] = (INFINITY, api.current_time())
-          expired_table_enties.append(dest)
+          expired_table_entries.append(dest)
 
           if self.dv[dest][1] == p:
             # recompute shortest path to dest
             min_cost_to_dest = INFINITY
+            reallyInfCount = False
             next_hop = None
             for pp in self.neighbors_distance:
               entries = self.tables[pp]
               if dest in entries and min_cost_to_dest >= entries[dest][0] + self.neighbors_distance[pp]:
                 # print dest, entries, self.neighbors_distance[pp]
                 min_cost_to_dest = entries[dest][0] + self.neighbors_distance[pp]
+                if min_cost_to_dest == INFINITY:
+                  reallyInfCount = True
                 next_hop = pp
-            self.dv[dest] = (min_cost_to_dest, next_hop)
-      for dest in expired_table_enties:
+            if min_cost_to_dest == INFINITY:
+              if reallyInfCount:
+                self.dv[dest] = (min_cost_to_dest, next_hop)
+              else:
+                unreachable_destinations.append(dest)
+            else:
+              self.dv[dest] = (min_cost_to_dest, next_hop)
+      for dest in expired_table_entries:
         self.tables[p].pop(dest)
-    # print "finished Handle_timer. Table is ", self.tables
+      for dest in unreachable_destinations:
+        self.dv.pop(dest)
 
     # send my tables
     for pp in self.neighbors_distance:
